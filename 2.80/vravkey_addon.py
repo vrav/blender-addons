@@ -208,6 +208,15 @@ class EDIT_OT_delete_context_special(bpy.types.Operator):
         return {'FINISHED'}
 #
 
+class EDIT_OT_grow_selection_to_cursor(bpy.types.Operator):
+    bl_idname = "mesh.grow_selection_to_cursor"
+    bl_options = {'REGISTER', 'UNDO'}
+    bl_label = "Grow Selection to 3D Cursor"
+    bl_description = "Grows selection towards the 3D cursor."
+    
+    def execute(self, context):
+        pass
+
 classes = (
     OBJECT_OT_transforms_clear,
     OBJECT_MT_ClearTransMenu,

@@ -155,10 +155,14 @@ circleindices = (
 )
 
 def draw_callback_px(self, context):
+    # if we just started and don't have the cursor yet, return
+    if not hasattr(self, "cur"):
+        return
+
     # circle graphic, text, and slider
     unify_settings = bpy.context.tool_settings.unified_paint_settings
-    strength = unify_settings.strength if self.uni_str else self.brush.strength
-    size = unify_settings.size if self.uni_size else self.brush.size
+    strength = unify_settings.strength if (self.uni_str and self.mode != "PARTICLE") else self.brush.strength
+    size = unify_settings.size if (self.uni_size and self.mode != "PARTICLE") else self.brush.size
     
     vertices = []
     colors = []
@@ -173,7 +177,7 @@ def draw_callback_px(self, context):
         starti = len(vertices)
         for x, y in circlepoints:
             vertices.append((int(size * x) + self.cur[0], int(size * y) + self.cur[1]))
-            colors.append((self.brushcolor.r, self.brushcolor.g, self.brushcolor.b, strength * 0.25))
+            colors.append((self.brushcolor[0], self.brushcolor[1], self.brushcolor[2], strength * 0.25))
         for i in circleindices:
             indices.append((starti + i[0], starti + i[1], starti + i[2]))
     
@@ -204,7 +208,7 @@ def draw_callback_px(self, context):
         # rectpoints: (0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)
         for x, y in rectpoints:
             vertices.append((int(textsize[0] * x) + xpos, int(textsize[1] * y) + ypos))
-            colors.append((self.backcolor.r, self.backcolor.g, self.backcolor.b, 0.5))
+            colors.append((self.backcolor[0], self.backcolor[1], self.backcolor[2], 0.5))
         indices.extend((
             (starti, starti+1, starti+2), (starti+2, starti, starti+3)
         ))
@@ -229,7 +233,7 @@ def draw_callback_px(self, context):
         # rectpoints: (0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)
         for x, y in rectpoints:
             vertices.append((int(self.sliderwidth * x) + xpos, int(self.sliderheight * y) + ypos - 1))
-            colors.append((self.backcolor.r, self.backcolor.g, self.backcolor.b, 0.5))
+            colors.append((self.backcolor[0], self.backcolor[1], self.backcolor[2], 0.5))
         indices.extend((
             (starti, starti+1, starti+2), (starti+2, starti, starti+3)
         ))
@@ -239,7 +243,7 @@ def draw_callback_px(self, context):
         # rectpoints: (0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)
         for x, y in rectpoints:
             vertices.append((int(self.sliderwidth * x * sliderscale) + xpos, int(self.sliderheight * y * 0.75) + ypos))
-            colors.append((self.frontcolor.r, self.frontcolor.g, self.frontcolor.b, 0.8))
+            colors.append((self.frontcolor[0], self.frontcolor[1], self.frontcolor[2], 0.8))
         indices.extend((
             (starti, starti+1, starti+2), (starti+2, starti, starti+3)
         ))
@@ -260,7 +264,7 @@ def applyChanges(self):
     unify_settings = bpy.context.tool_settings.unified_paint_settings
 
     if self.doingstr:
-        if self.uni_str:
+        if self.uni_str and self.mode != 'PARTICLE':
             modrate = self.strmod * 0.0025
             newval  = unify_settings.strength + modrate
             if 10.0 > newval > 0.0:
@@ -274,7 +278,7 @@ def applyChanges(self):
                 self.strmod_total += modrate
     
     if self.doingrad:
-        if self.uni_size:
+        if self.uni_size and self.mode != 'PARTICLE':
             newval = unify_settings.size + self.radmod
             if 2000 > newval > 0:
                 unify_settings.size = newval
@@ -366,7 +370,7 @@ class PAINT_OT_brush_modal_quickset(bpy.types.Operator):
     @classmethod
     def poll(cls, context):
         return (context.area.type == 'VIEW_3D'
-                and context.mode in {'SCULPT', 'PAINT_WEIGHT', 'PAINT_VERTEX', 'PAINT_TEXTURE'})
+                and context.mode in {'SCULPT', 'PAINT_WEIGHT', 'PAINT_VERTEX', 'PAINT_TEXTURE', 'PARTICLE'})
     
     
     def modal(self, context, event):
@@ -464,10 +468,13 @@ class PAINT_OT_brush_modal_quickset(bpy.types.Operator):
             self.brush = context.tool_settings.vertex_paint.brush
         elif bpy.context.mode == 'PAINT_WEIGHT':
             self.brush = context.tool_settings.weight_paint.brush
+        elif bpy.context.mode == 'PARTICLE':
+            self.brush = context.tool_settings.particle_edit.brush
         else:
             self.report({'WARNING'}, "Mode invalid - only paint or sculpt")
             return {'CANCELLED'}
         
+        self.mode = bpy.context.mode
         self.hotkey = event.type
         if self.hotkey == 'NONE':
             self.keyaction = 'IGNORE'
@@ -490,10 +497,14 @@ class PAINT_OT_brush_modal_quickset(bpy.types.Operator):
         if self.graphic:
             if not hasattr(self, '_handle'):
                 self._handle = context.space_data.draw_handler_add(draw_callback_px, (self, context), 'WINDOW', 'POST_PIXEL')
-                
-            self.brushcolor = self.brush.cursor_color_add
-            if self.brush.sculpt_capabilities.has_secondary_color and self.brush.direction in {'SUBTRACT','DEEPEN','MAGNIFY','PEAKS','CONTRAST','DEFLATE'}:
-                self.brushcolor = self.brush.cursor_color_subtract
+            
+            if hasattr(self.brush, "cursor_color_add"):
+                self.brushcolor = self.brush.cursor_color_add
+            elif hasattr(self.brush, "sculpt_capabilities"):
+                if self.brush.sculpt_capabilities.has_secondary_color and self.brush.direction in {'SUBTRACT','DEEPEN','MAGNIFY','PEAKS','CONTRAST','DEFLATE'}:
+                    self.brushcolor = self.brush.cursor_color_subtract
+            else:
+                self.brushcolor = [1.0, 0.39, 0.39, .90]
             
         if self.text != 'NONE':
             if not hasattr(self, '_handle'):
